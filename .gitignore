@@ -1,0 +1,43 @@
+# Claude Code / editor local config
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Dataset & media
+data/dataset/
+data/videos/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Hasil run & output
+output/
+runs/
+wandb/
+
+# Secrets
+.env
+*.env

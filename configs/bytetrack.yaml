@@ -1,0 +1,10 @@
+# Konfigurasi ByteTrack untuk Ultralytics.
+# Naikkan track_buffer kalau kendaraan sering ketutup (occlusion) dan ID-nya berganti.
+tracker_type: bytetrack
+
+track_high_thresh: 0.30   # deteksi skor tinggi -> asosiasi tahap 1
+track_low_thresh: 0.10    # deteksi skor rendah -> asosiasi tahap 2 (inti ByteTrack)
+new_track_thresh: 0.40    # skor minimum untuk membuat track baru
+track_buffer: 45          # frame track dipertahankan setelah hilang (~1.5 dtk @30fps)
+match_thresh: 0.85        # ambang IoU matching
+fuse_score: true          # gabungkan skor deteksi ke biaya matching
