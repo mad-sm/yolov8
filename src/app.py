@@ -266,9 +266,15 @@ with c2:
     x2 = st.slider("Titik B · x", 0, W, int(default["p2"][0]))
     y2 = st.slider("Titik B · y", 0, H, int(default["p2"][1]))
 
-lc1, lc2 = st.columns(2)
-lbl_pos = lc1.text_input("Label arah 1", "MASUK")
-lbl_neg = lc2.text_input("Label arah 2", "KELUAR")
+two_way = st.checkbox(
+    "Pisahkan hitungan per arah", value=False,
+    help="Default: satu angka saja, yaitu jumlah kendaraan yang melewati garis.")
+if two_way:
+    lc1, lc2 = st.columns(2)
+    lbl_pos = lc1.text_input("Label arah 1", "MASUK")
+    lbl_neg = lc2.text_input("Label arah 2", "KELUAR")
+else:
+    lbl_pos, lbl_neg = "MASUK", "KELUAR"
 
 if frame0 is not None:
     prev = frame0.copy()
@@ -318,7 +324,8 @@ if st.button("Mulai", type="primary", use_container_width=True):
     if yt_live:
         total_frames = max_frames or 0
 
-    lc = LineCounter((x1, y1), (x2, y2), dir_labels=(lbl_pos, lbl_neg))
+    lc = LineCounter((x1, y1), (x2, y2), dir_labels=(lbl_pos, lbl_neg),
+                     count_direction=two_way)
     trails = TrackTrail()
 
     writer = None
@@ -328,8 +335,10 @@ if st.button("Mulai", type="primary", use_container_width=True):
 
     prog = st.progress(0.0, "Menyiapkan...")
     metric_box = st.container()
-    m1, m2, m3, m4 = metric_box.columns(4)
-    ph_total, ph_pos, ph_neg, ph_fps = m1.empty(), m2.empty(), m3.empty(), m4.empty()
+    n_kolom = 4 if two_way else 2
+    kolom = metric_box.columns(n_kolom)
+    ph_total, ph_fps = kolom[0].empty(), kolom[-1].empty()
+    ph_pos, ph_neg = (kolom[1].empty(), kolom[2].empty()) if two_way else (None, None)
     ph_img = st.empty()
 
     track_kw = dict(tracker=tracker, persist=True, conf=conf, imgsz=imgsz,
@@ -405,10 +414,11 @@ if st.button("Mulai", type="primary", use_container_width=True):
             if writer is not None:
                 writer.write(frame)
 
-            pos, neg = lc.totals_per_direction()
-            ph_total.metric("Total melintas", lc.total)
-            ph_pos.metric(lbl_pos, pos)
-            ph_neg.metric(lbl_neg, neg)
+            ph_total.metric("Melewati garis", lc.total)
+            if two_way:
+                pos, neg = lc.totals_per_direction()
+                ph_pos.metric(lbl_pos, pos)
+                ph_neg.metric(lbl_neg, neg)
             ph_fps.metric("fps proses", f"{fps_disp:.1f}")
 
             if show_live and frame_idx % 3 == 0:
@@ -437,6 +447,7 @@ if st.button("Mulai", type="primary", use_container_width=True):
         "rows": lc.summary_rows(), "events": events, "total": lc.total,
         "pos": lc.totals_per_direction()[0], "neg": lc.totals_per_direction()[1],
         "unik": len(lc.seen_ids), "dropped": n_dropped, "frames": frame_idx,
+        "two_way": two_way, "kolom": lc.fieldnames,
         "durasi": dur, "elapsed": elapsed, "lbl": (lbl_pos, lbl_neg),
         "video": str(vid_out) if save_video else None,
     }
@@ -447,11 +458,16 @@ if "hasil" in st.session_state:
     lbl_p, lbl_n = h["lbl"]
 
     st.subheader("3. Hasil")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total melintas", h["total"])
-    k2.metric(lbl_p, h["pos"])
-    k3.metric(lbl_n, h["neg"])
-    k4.metric("Kendaraan unik terdeteksi", h["unik"])
+    if h.get("two_way"):
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Melewati garis", h["total"])
+        k2.metric(lbl_p, h["pos"])
+        k3.metric(lbl_n, h["neg"])
+        k4.metric("Kendaraan unik terdeteksi", h["unik"])
+    else:
+        k1, k2 = st.columns(2)
+        k1.metric("Kendaraan melewati garis", h["total"])
+        k2.metric("Kendaraan unik terdeteksi", h["unik"])
 
     if h["durasi"] > 0:
         st.caption(
@@ -467,7 +483,8 @@ if "hasil" in st.session_state:
         df = pd.DataFrame(h["rows"])
         c1, c2 = st.columns([1, 1])
         c1.dataframe(df, use_container_width=True, hide_index=True)
-        c2.bar_chart(df.set_index("kelas")[[lbl_p, lbl_n]])
+        kol_nilai = [lbl_p, lbl_n] if h.get("two_way") else ["JUMLAH"]
+        c2.bar_chart(df.set_index("kelas")[kol_nilai])
 
         st.download_button("Ringkasan (CSV)", df.to_csv(index=False),
                            "ringkasan.csv", "text/csv")

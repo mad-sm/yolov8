@@ -111,15 +111,25 @@ def draw_panel(frame, lines, origin=(12, 12), pad=10, alpha=0.55):
 
 def panel_lines(lc, names, per_frame_total, fps_disp=None):
     """Susun teks panel dari LineCounter."""
-    pos, neg = lc.totals_per_direction()
-    lines = [(f"TOTAL {lc.total}   {lc.label_pos} {pos}   {lc.label_neg} {neg}", (255, 255, 255))]
+    if lc.count_direction:
+        pos, neg = lc.totals_per_direction()
+        head = f"TOTAL {lc.total}   {lc.label_pos} {pos}   {lc.label_neg} {neg}"
+    else:
+        head = f"MELEWATI GARIS: {lc.total}"
+    lines = [(head, (255, 255, 255))]
+
     sub = f"di layar: {per_frame_total}"
     if fps_disp is not None:
         sub += f"   fps: {fps_disp:.1f}"
     lines.append((sub, (185, 185, 185)))
+
     for cls_name in sorted(lc.counts):
         c = lc.counts[cls_name]
         cid = next((k for k, v in names.items() if v == cls_name), 0)
-        lines.append((f"{cls_name:<12} {lc.label_pos} {c[lc.label_pos]:>4}  "
-                      f"{lc.label_neg} {c[lc.label_neg]:>4}", color_for(cid)))
+        if lc.count_direction:
+            txt = (f"{cls_name:<12} {lc.label_pos} {c[lc.label_pos]:>4}  "
+                   f"{lc.label_neg} {c[lc.label_neg]:>4}")
+        else:
+            txt = f"{cls_name:<12} {sum(c.values()):>5}"
+        lines.append((txt, color_for(cid)))
     return lines

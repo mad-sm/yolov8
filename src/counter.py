@@ -26,10 +26,15 @@ class CrossEvent:
 class LineCounter:
     """Penghitung lintasan garis untuk objek ber-track-id."""
 
-    def __init__(self, p1, p2, dir_labels=("IN", "OUT"), deadzone=2.0, span_margin=0.05):
+    def __init__(self, p1, p2, dir_labels=("MASUK", "KELUAR"), count_direction=False,
+                 deadzone=2.0, span_margin=0.05):
         self.p1 = (float(p1[0]), float(p1[1]))
         self.p2 = (float(p2[0]), float(p2[1]))
+        self.count_direction = count_direction
         self.label_pos, self.label_neg = dir_labels
+        # Default: satu angka saja - berapa kendaraan melewati garis. Pemisahan
+        # arah baru dinyalakan kalau count_direction=True.
+        self.labels = [self.label_pos, self.label_neg] if count_direction else ["JUMLAH"]
         self.deadzone = deadzone          # piksel; meredam jitter di sekitar garis
         self.span_margin = span_margin    # toleransi di luar ujung segmen
 
@@ -38,7 +43,7 @@ class LineCounter:
         )
         self.prev_side = {}                       # track_id -> -1 / +1
         self.cls_votes = defaultdict(Counter)     # track_id -> Counter(kelas)
-        self.counts = defaultdict(lambda: {self.label_pos: 0, self.label_neg: 0})
+        self.counts = defaultdict(lambda: {lb: 0 for lb in self.labels})
         self.events: list[CrossEvent] = []
         self.seen_ids = set()
 
@@ -76,7 +81,10 @@ class LineCounter:
         if not self._within_span(point):
             return None  # melintas di perpanjangan garis, bukan di segmennya
 
-        direction = self.label_pos if side > 0 else self.label_neg
+        if self.count_direction:
+            direction = self.label_pos if side > 0 else self.label_neg
+        else:
+            direction = self.labels[0]
         stable_cls = self.cls_votes[track_id].most_common(1)[0][0]
         self.counts[stable_cls][direction] += 1
 
@@ -87,9 +95,12 @@ class LineCounter:
     # --- ringkasan ------------------------------------------------------
     @property
     def total(self):
-        return sum(v[self.label_pos] + v[self.label_neg] for v in self.counts.values())
+        return sum(sum(v.values()) for v in self.counts.values())
 
     def totals_per_direction(self):
+        """Hanya bermakna saat count_direction=True."""
+        if not self.count_direction:
+            return self.total, 0
         pos = sum(v[self.label_pos] for v in self.counts.values())
         neg = sum(v[self.label_neg] for v in self.counts.values())
         return pos, neg
@@ -98,15 +109,17 @@ class LineCounter:
         rows = []
         for cls_name in sorted(self.counts):
             c = self.counts[cls_name]
-            rows.append(
-                {
-                    "kelas": cls_name,
-                    self.label_pos: c[self.label_pos],
-                    self.label_neg: c[self.label_neg],
-                    "total": c[self.label_pos] + c[self.label_neg],
-                }
-            )
+            row = {"kelas": cls_name}
+            row.update({lb: c[lb] for lb in self.labels})
+            if self.count_direction:
+                row["total"] = sum(c.values())
+            rows.append(row)
         return rows
+
+    @property
+    def fieldnames(self):
+        """Nama kolom CSV ringkasan, mengikuti mode hitung."""
+        return ["kelas"] + self.labels + (["total"] if self.count_direction else [])
 
     def forget(self, active_ids, keep=600):
         """Buang state track lama supaya memori tidak membengkak di video panjang."""

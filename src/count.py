@@ -64,7 +64,11 @@ def main():
                     help="berhenti setelah N frame (wajib untuk siaran live)")
     ap.add_argument("--line", help="x1,y1,x2,y2 (piksel)")
     ap.add_argument("--line-file", default=str(ROOT / "data" / "line.json"))
-    ap.add_argument("--labels", default="MASUK,KELUAR", help="label 2 arah, dipisah koma")
+    ap.add_argument("--two-way", action="store_true",
+                    help="pisahkan hitungan per arah. Default: satu angka saja, "
+                         "yaitu jumlah kendaraan yang melewati garis.")
+    ap.add_argument("--labels", default="MASUK,KELUAR",
+                    help="label 2 arah (hanya dipakai bersama --two-way)")
     ap.add_argument("--ref", default="bottom", choices=["bottom", "center"],
                     help="titik acuan bbox untuk uji lintasan")
     ap.add_argument("--tracker", default=str(ROOT / "configs" / "bytetrack.yaml"))
@@ -146,7 +150,7 @@ def main():
 
     p1, p2 = load_line(args, (H, W))
     dir_labels = tuple(l.strip() for l in args.labels.split(",")[:2])
-    lc = LineCounter(p1, p2, dir_labels=dir_labels)
+    lc = LineCounter(p1, p2, dir_labels=dir_labels, count_direction=args.two_way)
     trails = TrackTrail()
 
     out_dir = Path(args.out_dir)
@@ -161,7 +165,8 @@ def main():
     events_path = out_dir / f"{stem}_events.csv"
     ev_file = open(events_path, "w", newline="")
     ev_writer = csv.writer(ev_file)
-    ev_writer.writerow(["frame", "detik", "track_id", "kelas", "arah"])
+    ev_cols = ["frame", "detik", "track_id", "kelas"] + (["arah"] if args.two_way else [])
+    ev_writer.writerow(ev_cols)
 
     track_kw = dict(tracker=tracker, persist=True, conf=args.conf, iou=args.iou,
                     imgsz=args.imgsz, classes=class_filter, device=device,
@@ -220,9 +225,10 @@ def main():
                     pt = ref_point(box, args.ref)
                     ev = lc.update(tid, cls_name, pt, frame_idx, t_sec)
                     if ev:
-                        ev_writer.writerow(
-                            [ev.frame, ev.time_sec, ev.track_id, ev.cls_name, ev.direction]
-                        )
+                        baris = [ev.frame, ev.time_sec, ev.track_id, ev.cls_name]
+                        if args.two_way:
+                            baris.append(ev.direction)
+                        ev_writer.writerow(baris)
 
                     trail = None if args.no_trail else trails.update(tid, pt)
                     draw_box(frame, box, tid, cls_name, cf, color_for(int(ci)), pt, trail)
@@ -263,18 +269,25 @@ def main():
     rows = lc.summary_rows()
     summary_path = out_dir / f"{stem}_summary.csv"
     with open(summary_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["kelas", dir_labels[0], dir_labels[1], "total"])
+        w = csv.DictWriter(f, fieldnames=lc.fieldnames)
         w.writeheader()
         w.writerows(rows)
 
     elapsed = time.time() - t_start
-    pos, neg = lc.totals_per_direction()
     print("\n=== RINGKASAN ===")
-    print(f"{'kelas':<14}{dir_labels[0]:>8}{dir_labels[1]:>8}{'total':>8}")
-    for r in rows:
-        print(f"{r['kelas']:<14}{r[dir_labels[0]]:>8}{r[dir_labels[1]]:>8}{r['total']:>8}")
-    print("-" * 38)
-    print(f"{'SEMUA':<14}{pos:>8}{neg:>8}{lc.total:>8}")
+    if args.two_way:
+        pos, neg = lc.totals_per_direction()
+        print(f"{'kelas':<14}{dir_labels[0]:>8}{dir_labels[1]:>8}{'total':>8}")
+        for r in rows:
+            print(f"{r['kelas']:<14}{r[dir_labels[0]]:>8}{r[dir_labels[1]]:>8}{r['total']:>8}")
+        print("-" * 38)
+        print(f"{'SEMUA':<14}{pos:>8}{neg:>8}{lc.total:>8}")
+    else:
+        print(f"{'kelas':<14}{'melewati garis':>16}")
+        for r in rows:
+            print(f"{r['kelas']:<14}{r['JUMLAH']:>16}")
+        print("-" * 30)
+        print(f"{'SEMUA':<14}{lc.total:>16}")
     print(f"\nkendaraan unik terdeteksi : {len(lc.seen_ids)}")
     if reader is not None:
         print(f"frame siaran dilewati     : {reader.dropped} "
