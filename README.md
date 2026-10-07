@@ -195,7 +195,11 @@ meski deteksinya kena.
 Catatan: 1 gambar di split test dilewati karena anotasinya campur segment + detection
 (`23978_truk_jpg.rf.f966bb01…`), jadi 304 dari 305 gambar yang terhitung.
 
-Diuji di CCTV Simpang Gondomanan (`data/videos/jalan.mov`, 3450×1942, 21 detik):
+### Uji di rekaman CCTV asli
+
+Catatan di bawah ini berasal dari **run YOLO11s (19 Agu 2026)** di CCTV Simpang
+Gondomanan (`data/videos/jalan.mov`, 3450×1942, 21 detik). **Belum diulang dengan bobot
+YOLOv8s**, jadi belum diketahui apakah gejalanya masih sama:
 
 | Kelas | Status |
 |---|---|
