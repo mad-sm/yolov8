@@ -1,16 +1,18 @@
 # Deteksi & Hitung Kendaraan di Jalan Raya
 
-Pipeline: **YOLO11 (deteksi) → ByteTrack (tracking) → line crossing (hitung)**.
+Pipeline: **YOLOv8 (deteksi) → ByteTrack (tracking) → line crossing (hitung)**.
 Dataset: [Deteksi Kendaraan Indonesia 3 — Roboflow](https://app.roboflow.com/puteri-marlisajasmine/deteksi-kendaraan-indonesia-3-ddnbr/3) (versi 3).
 
-Dua notebook training tersedia:
+Notebook training yang tersedia:
 
 | Notebook | Model | Catatan |
 |---|---|---|
-| `colab_train_yolov8n.ipynb` | YOLOv8n | untuk skripsi — ringan, banyak pembanding di literatur |
-| `colab_train_kendaraan.ipynb` | YOLO11s | hasil pertama: mAP50 0.928 |
+| `colab_train_multi_model.ipynb` | bebas | ganti satu baris `MODEL` untuk tiap varian |
+| `colab_train_yolov8n.ipynb` | YOLOv8n | ringan, banyak pembanding di literatur |
+| `colab_train_kendaraan.ipynb` | YOLO11s | run pertama, dipakai sebagai pembanding |
 
-Keduanya identik selain modelnya, jadi angkanya bisa langsung dibandingkan.
+Semuanya identik selain modelnya, jadi angkanya bisa langsung dibandingkan — lihat
+[Catatan kualitas model](#catatan-kualitas-model) untuk hasil YOLOv8s vs YOLO11s.
 
 Kenapa perlu tracking, bukan sekadar deteksi: deteksi saja menghitung ulang kendaraan
 yang sama di tiap frame. ByteTrack memberi **ID unik** per kendaraan, jadi satu mobil
@@ -26,7 +28,7 @@ vehicle-counter/
 │   ├── sources.py           # resolusi sumber: file / webcam / RTSP / YouTube
 │   ├── viz.py               # warna, gambar kotak/garis/panel (dipakai CLI + app)
 │   ├── download_dataset.py  # tarik dataset dari Roboflow
-│   ├── train.py             # training YOLO11
+│   ├── train.py             # training YOLOv8
 │   ├── pick_line.py         # klik 2 titik untuk garis hitung
 │   ├── counter.py           # logika line crossing (dipakai count.py)
 │   └── count.py             # PROGRAM UTAMA: deteksi + hitung
@@ -98,11 +100,13 @@ Hasil: `data/dataset/` berisi `train/ valid/ test/ data.yaml`.
 ## 2. Training
 
 ```bash
-python src/train.py --model yolo11s.pt --epochs 100 --imgsz 640 --batch 16
+python src/train.py --model yolov8s.pt --epochs 100 --imgsz 640 --batch 16
 ```
 
-- `yolo11n.pt` cepat tapi kurang akurat untuk kendaraan kecil/jauh; `yolo11s.pt` titik
-  seimbang; `yolo11m.pt` paling akurat tapi berat di M1.
+- `yolov8n.pt` cepat tapi kurang akurat untuk kendaraan kecil/jauh; `yolov8s.pt` titik
+  seimbang (ini default `--model`); `yolov8m.pt` paling akurat tapi berat di M1.
+- Varian YOLO11 (`yolo11s.pt` dst) tetap bisa dipakai lewat `--model` — script dan
+  pipeline hitungnya sama, jadi angkanya bisa langsung dibandingkan.
 - Di M1 Pro, AMP dimatikan otomatis (bikin NaN loss di MPS) dan `workers=0`.
   Perkiraan: ~2–5 menit/epoch untuk ~2.000 gambar @640. Kalau kelamaan, sewa GPU di
   Colab/Kaggle dan jalankan script yang sama dengan `--device 0`.
@@ -127,12 +131,24 @@ dan tidak saling menumpuk. Jangan di tepi frame (objek baru muncul, ID belum sta
 
 ```bash
 python src/count.py \
-  --weights runs/kendaraan/weights/best.pt \
+  --weights runs/kendaraan_yolov8_v8/weights/best.pt \
   --source data/videos/jalan.mp4 \
   --line-file data/line.json \
-  --labels "MASUK,KELUAR" \
   --save --show
 ```
+
+Default-nya hitungannya **satu angka**: berapa kendaraan melewati garis. Kalau butuh
+dipisah per arah, tambahkan `--two-way` (label bisa diganti lewat `--labels "MASUK,KELUAR"`):
+
+```bash
+python src/count.py --weights runs/kendaraan_yolov8_v8/weights/best.pt \
+  --source data/videos/jalan.mp4 --two-way --labels "MASUK,KELUAR" --save
+```
+
+Di app Streamlit, mode ini ada sebagai checkbox **"Pisahkan hitungan per arah"**.
+
+Kalau `--weights` tidak diisi, script otomatis ambil `best.pt` paling baru di
+`runs/**/weights/`.
 
 Sumber lain: `--source 0` (webcam), `--source rtsp://user:pass@ip:554/stream` (CCTV).
 
@@ -140,8 +156,8 @@ Output di `output/`:
 | File | Isi |
 |---|---|
 | `<nama>_counted.mp4` | video dengan bbox, ID, jejak, garis, panel hitung |
-| `<nama>_events.csv` | tiap lintasan: `frame, detik, track_id, kelas, arah` |
-| `<nama>_summary.csv` | rekap per kelas per arah |
+| `<nama>_events.csv` | tiap lintasan: `frame, detik, track_id, kelas` (+ `arah` kalau `--two-way`) |
+| `<nama>_summary.csv` | rekap per kelas: kolom `JUMLAH`, atau per arah + `total` kalau `--two-way` |
 
 `events.csv` yang berisi timestamp itu bahan mentah untuk analisis lanjutan —
 volume per jam, jam sibuk, komposisi jenis kendaraan.
@@ -157,11 +173,27 @@ volume per jam, jam sibuk, komposisi jenis kendaraan.
 | `--max-area 12` | buang deteksi yang luasnya >12% frame (kotak raksasa salah deteksi) |
 | `--ref center` | titik acuan pakai tengah bbox, bukan tengah-bawah |
 | `--no-trail` | matikan gambar jejak |
+| `--two-way` | pisahkan hitungan per arah (default: satu angka total) |
 
-## Catatan kualitas model (hasil training 19 Agu 2026)
+## Catatan kualitas model
 
-Bobot `runs/kendaraan/weights/best.pt` (yolo11s, 100 epoch): **mAP50 0.928, mAP50-95 0.716**,
-precision 0.919, recall 0.871. Kelas: `bus, mobil, motor, truk`.
+Model yang dipakai sekarang: **YOLOv8s**, `runs/kendaraan_yolov8_v8/weights/best.pt`
+(100 epoch, imgsz 640). Kelas: `bus, mobil, motor, truk`.
+
+Kedua bobot diukur ulang di **split `test`** yang sama (304 gambar, 1466 instance,
+imgsz 640, 7 Okt 2026) supaya bisa dibandingkan apple-to-apple:
+
+| Model | mAP50 | mAP50-95 | precision | recall |
+|---|---|---|---|---|
+| **YOLOv8s** (dipakai) | **0.945** | **0.730** | 0.927 | 0.887 |
+| YOLO11s | 0.941 | 0.726 | 0.937 | 0.869 |
+
+mAP50 per kelas (YOLOv8s): `truk` 0.966, `bus` 0.963, `mobil` 0.956, `motor` 0.895.
+`motor` paling rendah di mAP50-95 (0.586) — objeknya kecil, jadi kotaknya kurang presisi
+meski deteksinya kena.
+
+Catatan: 1 gambar di split test dilewati karena anotasinya campur segment + detection
+(`23978_truk_jpg.rf.f966bb01…`), jadi 304 dari 305 gambar yang terhitung.
 
 Diuji di CCTV Simpang Gondomanan (`data/videos/jalan.mov`, 3450×1942, 21 detik):
 
@@ -176,11 +208,13 @@ Kendaraan besar (pickup) tetap terdeteksi, tapi diberi label `bus` dengan kotak 
 jadi ini kegagalan lokalisasi, bukan sekadar salah kelas. Akibatnya kendaraan besar
 belum bisa dihitung dengan andal.
 
-**Yang perlu dicek:** jalankan `best.val()` di Colab dan lihat mAP50 **per kelas**. Kalau
-`bus`/`truk` mendekati 0, masalahnya ada di dataset, bukan di training. Kemungkinan
-penyebab: jumlah sampel bus/truk sangat sedikit, atau kotak anotasinya digambar
-terlalu besar. Pilihan perbaikan: tambah sampel, perbaiki anotasi, atau gabung
-`bus`+`truk` jadi satu kelas "kendaraan besar".
+**Sudah dicek:** mAP50 per kelas di split test ternyata tinggi untuk `bus` (0.963) dan
+`truk` (0.966) — jadi hipotesis "dataset-nya rusak" **tidak terbukti**. Model bisa
+mengenali bus/truk dengan baik di gambar yang sejenis data latihnya. Yang gagal adalah
+generalisasi ke rekaman CCTV asli: resolusinya jauh lebih besar (3450×1942 vs 640),
+sudutnya lebih tinggi, dan kendaraan besar muncul dalam skala yang tidak ada di dataset.
+Ini domain gap, bukan anotasi busuk. Arah perbaikan: tambah sampel frame CCTV asli ke
+dataset, atau naikkan `--imgsz` saat inferensi supaya skalanya lebih dekat.
 
 **Untuk sekarang**, konfigurasi yang andal: `--classes motor,mobil`.
 
@@ -188,8 +222,9 @@ terlalu besar. Pilihan perbaikan: tambah sampel, perbaiki anotasi, atau gabung
 
 `src/counter.py` menghitung **jarak bertanda** titik acuan kendaraan (default:
 tengah-bawah bbox ≈ posisi roda di aspal) terhadap garis A–B. Saat tandanya berbalik,
-kendaraan dianggap melintas; arahnya diambil dari tanda yang baru, jadi satu garis
-menghitung dua arah sekaligus. Tiga pengaman:
+kendaraan dianggap melintas. Tanda yang baru juga menunjukkan arah lintasan, jadi satu
+garis bisa menghitung dua arah sekaligus — tapi pemisahan arah itu baru ditampilkan
+kalau `--two-way` dinyalakan. Tiga pengaman:
 
 - **deadzone 2 px** — meredam jitter bbox di sekitar garis agar tidak dihitung ganda.
 - **cek rentang segmen** — lintasan di perpanjangan garis (di luar A–B) diabaikan.
@@ -210,7 +245,7 @@ Edit `configs/bytetrack.yaml`:
 Pipeline sudah diuji end-to-end dengan bobot COCO + video sintetis:
 
 ```bash
-python src/count.py --weights yolo11n.pt --source data/videos/test_sintetis.mp4 \
+python src/count.py --weights yolov8n.pt --source data/videos/test_sintetis.mp4 \
   --line "0,240,640,240" --classes bus --save
 ```
 

@@ -1,7 +1,7 @@
 """Training model deteksi kendaraan di dataset Roboflow (jalur lokal).
 
 Contoh:
-    python src/train.py --model yolo11s.pt --epochs 100
+    python src/train.py --model yolov8s.pt --epochs 100
 
 Di Mac (MPS) AMP dimatikan otomatis karena bikin NaN loss, dan workers=0.
 Untuk training serius pakai GPU, gunakan notebook Colab di akar proyek:
@@ -29,8 +29,9 @@ def pick_device(requested: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(ROOT / "data" / "dataset" / "data.yaml"))
-    ap.add_argument("--model", default="yolo11s.pt",
-                    help="yolo11n/s/m/l.pt — n=cepat, s=seimbang, m=akurat")
+    ap.add_argument("--model", default="yolov8s.pt",
+                    help="yolov8n/s/m/l.pt — n=cepat, s=seimbang, m=akurat. "
+                         "Varian YOLO11 (yolo11s.pt dst) juga bisa dipakai.")
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16, help="-1 = auto (CUDA saja)")
